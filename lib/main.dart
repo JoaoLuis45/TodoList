@@ -1,7 +1,11 @@
 // ignore_for_file: prefer_const_constructors, sort_child_properties_last
 
-import 'package:curso/models/item.dart';
+import 'dart:convert';
+
+import 'package:todolist/models/item.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const App());
@@ -28,9 +32,6 @@ class HomePage extends StatefulWidget {
 
   HomePage() {
     items = [];
-    items?.add(Item(title: 'Item 1', done: false));
-    items?.add(Item(title: 'Item 2', done: true));
-    items?.add(Item(title: 'Item 3', done: false));
   }
 
   @override
@@ -39,19 +40,55 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   var newTaksCrtl = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
   void add() {
     setState(() {
       if (newTaksCrtl.text != '') {
         widget.items?.add(Item(title: newTaksCrtl.text, done: false));
         newTaksCrtl.clear();
+        save();
       }
+    });
+  }
+
+  void edit(int index) {
+    setState(() {
+      newTaksCrtl.clear();
+      newTaksCrtl.text = widget.items![index].title!;
+      remove(index);
+      save();
+      SystemChannels.textInput.invokeMethod('TextInput.show');
     });
   }
 
   void remove(int index) {
     setState(() {
       widget.items!.removeAt(index);
+      save();
     });
+  }
+
+  Future load() async {
+    var prefs = await SharedPreferences.getInstance();
+    var data = prefs.getString('data');
+
+    if (data != null) {
+      Iterable decoded = jsonDecode(data);
+      List<Item> result = decoded.map((x) => Item.fromJson(x)).toList();
+      setState(() {
+        widget.items = result;
+      });
+    }
+  }
+
+  save() async {
+    var prefs = await SharedPreferences.getInstance();
+    await prefs.setString('data', jsonEncode(widget.items));
+  }
+
+  _HomePageState() {
+    load();
   }
 
   @override
@@ -59,6 +96,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: TextFormField(
+          focusNode: _focusNode,
           controller: newTaksCrtl,
           keyboardType: TextInputType.text,
           style: TextStyle(
@@ -67,7 +105,7 @@ class _HomePageState extends State<HomePage> {
             fontWeight: FontWeight.bold,
           ),
           decoration: InputDecoration(
-            label: Text("Nova Tarefa"),
+            label: Text("Adicionar Nova Tarefa"),
             labelStyle: TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
@@ -87,13 +125,22 @@ class _HomePageState extends State<HomePage> {
                   onChanged: (value) {
                     setState(() {
                       item!.done = value!;
+                      save();
                     });
                   }),
               background: Container(
                 color: const Color.fromARGB(255, 255, 17, 0).withOpacity(0.8),
               ),
-              onDismissed: (direction) => {print(direction)},
-              direction: DismissDirection.startToEnd,
+              secondaryBackground: Container(
+                color: const Color.fromARGB(255, 55, 255, 0).withOpacity(0.8),
+              ),
+              onDismissed: (direction) => {
+                if (direction == DismissDirection.startToEnd)
+                  {remove(index)}
+                else
+                  {edit(index)}
+              },
+              direction: DismissDirection.horizontal,
             );
           },
           itemCount: widget.items?.length),
@@ -103,7 +150,10 @@ class _HomePageState extends State<HomePage> {
           color: Colors.white,
         ),
         backgroundColor: Colors.black,
-        onPressed: add,
+        onPressed: () {
+          add();
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
+        },
       ),
     );
   }
